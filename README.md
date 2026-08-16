@@ -1,0 +1,2 @@
+# MlabMovieCompressor
+FFmpegを使ってMP4動画を指定したファイルサイズ以下に圧縮する、シンプルツール。
