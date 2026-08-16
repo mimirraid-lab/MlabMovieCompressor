@@ -1,0 +1,35 @@
+name: Collect FFmpeg Sources
+
+on:
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout MlabMovieCompressor
+        uses: actions/checkout@v4
+
+      - name: Checkout BtbN FFmpeg-Builds
+        uses: actions/checkout@v4
+        with:
+          repository: BtbN/FFmpeg-Builds
+          ref: 590a6612d7d961e9258429e501619e0b7d7cbedf
+          path: FFmpeg-Builds
+
+      - name: Download corresponding sources
+        working-directory: FFmpeg-Builds
+        run: ./download.sh
+
+      - name: Archive sources
+        working-directory: FFmpeg-Builds
+        run: |
+          tar -czf ../ffmpeg-btbn-20260816-corresponding-sources.tar.gz \
+            .cache/downloads
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-btbn-20260816-corresponding-sources
+          path: ffmpeg-btbn-20260816-corresponding-sources.tar.gz
