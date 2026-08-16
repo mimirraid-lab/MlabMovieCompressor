@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { recentSizes } from "../src/lib/history";
+import { targetMbToBytes } from "../src/lib/fileSize";
 import { parseTargetMb } from "../src/lib/validation";
 
 describe("recent target sizes", () => {
@@ -16,5 +17,14 @@ describe("target validation", () => {
     expect(parseTargetMb("0")).toBeNull();
     expect(parseTargetMb("-1")).toBeNull();
     expect(parseTargetMb("abc")).toBeNull();
+  });
+});
+
+describe("MiB target-size conversion", () => {
+  it("uses 1,048,576 bytes for each displayed MB", () => {
+    expect(targetMbToBytes(1)).toBe(1_048_576);
+    expect(targetMbToBytes(10)).toBe(10_485_760);
+    expect(targetMbToBytes(25)).toBe(26_214_400);
+    expect(targetMbToBytes(1.5)).toBe(1_572_864);
   });
 });

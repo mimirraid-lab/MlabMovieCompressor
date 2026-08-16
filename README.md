@@ -49,9 +49,9 @@ WindowsではTauriのWebView2、macOSではXcode Command Line Toolsなど、OS�
 
 ## FFmpegの準備
 
-FFmpegバイナリはこのリポジトリに含めていません。FFmpegとffprobeをインストールして、両方が `PATH` から実行できるようにしてください。
+Windows x64の配布版には、FFmpeg / ffprobeをTauri sidecarとして同梱します。エンドユーザーがFFmpegをインストールしたり、PATHを設定したりする必要はありません。
 
-配布方法を後から差し替えられるよう、実行パスは環境変数でも指定できます。
+開発時は、ローカルにインストールしたFFmpeg / ffprobeを `PATH` から実行します。必要に応じて、開発環境に限り環境変数で実行ファイルを指定できます。
 
 ```powershell
 $env:MLAB_FFMPEG_PATH = "C:\\tools\\ffmpeg\\bin\\ffmpeg.exe"
@@ -65,7 +65,17 @@ export MLAB_FFMPEG_PATH=/opt/homebrew/bin/ffmpeg
 export MLAB_FFPROBE_PATH=/opt/homebrew/bin/ffprobe
 ```
 
-FFmpegはMlabMovieCompressorとは別のプロジェクトです。FFmpegの利用・再配布・ライセンス条件は、FFmpeg側のライセンスと配布条件を確認してください。
+Windows x64向けsidecarは、次のターゲットトリプル付きファイル名で配置します。
+
+```text
+src-tauri/binaries/
+  ffmpeg-x86_64-pc-windows-msvc.exe
+  ffprobe-x86_64-pc-windows-msvc.exe
+```
+
+これらのバイナリはサイズが大きいためGit管理対象外です。配布ビルドを行う環境へ、承認済みのBtbN FFmpeg Builds由来ファイルを配置してください。現在の対象はWindows x64のみで、Windows ARM / macOS向けsidecarは含みません。
+
+FFmpegはMlabMovieCompressorとは別のプロジェクトです。Windows配布版はBtbN FFmpeg BuildsのGPLビルドを利用します。詳細な第三者ライセンス表記・ソース参照先は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を確認してください。MlabMovieCompressor自作部分のMIT Licenseとは別のライセンスです。
 
 ## テスト
 
@@ -87,7 +97,7 @@ cargo test
 - MP4以外、複数ファイル、解像度変更、FPS変更、ハードウェアエンコードは対象外です。
 - 固定ビットレートの2回エンコードでも、映像内容やMP4コンテナの都合で指定サイズを厳密に保証するものではありません。容量超過を避けるため安全マージンを取ります。
 - 目標サイズが極端に小さい場合は警告しますが、計算不能なほど小さい値は拒否します。
-- 実機FFmpegを用いたWindows / macOSでの統合検証、アプリ署名・公証は未完了です。
+- Windows x64以外のFFmpeg sidecar、アプリ署名・公証は未完了です。
 
 ## ライセンス
 

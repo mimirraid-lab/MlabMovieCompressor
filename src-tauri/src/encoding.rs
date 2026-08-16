@@ -3,6 +3,7 @@ use std::{fs, path::{Path, PathBuf}};
 use crate::app::AppError;
 
 pub const AUDIO_BITRATE: u64 = 96_000;
+pub const BYTES_PER_MIB: f64 = 1_048_576.0;
 const CONTAINER_OVERHEAD: u64 = 12_000;
 const SAFETY_FACTOR: f64 = 0.94;
 const MIN_VIDEO_BITRATE: u64 = 10_000;
@@ -10,12 +11,14 @@ const MIN_VIDEO_BITRATE: u64 = 10_000;
 #[derive(Debug, Clone, Copy)]
 pub struct BitratePlan { pub video_bps: u64, pub audio_bps: u64 }
 
+pub fn target_mib_to_bytes(target_mib: f64) -> f64 { target_mib * BYTES_PER_MIB }
+
 pub fn calculate_bitrate(target_mb: f64, duration_seconds: f64, has_audio: bool) -> Result<BitratePlan, AppError> {
     if !target_mb.is_finite() || target_mb <= 0.0 || !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err(AppError::user("目標サイズまたは動画の長さが正しくありません。"));
     }
     let audio_bps = if has_audio { AUDIO_BITRATE } else { 0 };
-    let total_bps = (target_mb * 1_000_000.0 * 8.0 * SAFETY_FACTOR / duration_seconds).floor() as u64;
+    let total_bps = (target_mib_to_bytes(target_mb) * 8.0 * SAFETY_FACTOR / duration_seconds).floor() as u64;
     let video_bps = total_bps.saturating_sub(audio_bps + CONTAINER_OVERHEAD);
     if video_bps < MIN_VIDEO_BITRATE {
         return Err(AppError::user("目標サイズが小さすぎるため、圧縮設定を計算できません。目標サイズを大きくしてください。"));
@@ -54,6 +57,20 @@ mod tests {
         let plan = calculate_bitrate(10.0, 60.0, true).unwrap();
         assert_eq!(plan.audio_bps, AUDIO_BITRATE);
         assert!(plan.video_bps > 1_000_000);
+    }
+
+    #[test]
+    fn converts_ui_mb_values_to_mib_bytes() {
+        assert_eq!(target_mib_to_bytes(1.0), 1_048_576.0);
+        assert_eq!(target_mib_to_bytes(10.0), 10_485_760.0);
+        assert_eq!(target_mib_to_bytes(25.0), 26_214_400.0);
+        assert_eq!(target_mib_to_bytes(1.5), 1_572_864.0);
+    }
+
+    #[test]
+    fn bitrate_uses_mib_byte_budget() {
+        let plan = calculate_bitrate(10.0, 60.0, true).unwrap();
+        assert_eq!(plan.video_bps, 1_206_215);
     }
 
     #[test]
