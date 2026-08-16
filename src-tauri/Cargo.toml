@@ -1,0 +1,29 @@
+[package]
+name = "mlab-movie-compressor"
+version = "0.1.0"
+description = "A simple MP4 file-size compressor"
+authors = ["mimirraid-lab"]
+edition = "2021"
+
+[lib]
+name = "mlab_movie_compressor_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "mlab-movie-compressor"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["process", "io-util", "sync", "time"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tempfile = "3"

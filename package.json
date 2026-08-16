@@ -1,0 +1,25 @@
+{
+  "name": "mlab-movie-compressor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "tauri": "tauri",
+    "tauri:dev:windows": "scripts\\tauri-windows.cmd dev",
+    "tauri:build:windows": "scripts\\tauri-windows.cmd build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-opener": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}
