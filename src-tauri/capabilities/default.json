@@ -6,13 +6,6 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "opener:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        { "name": "binaries/ffmpeg", "sidecar": true, "args": true },
-        { "name": "binaries/ffprobe", "sidecar": true, "args": true }
-      ]
-    }
+    "opener:allow-open-path"
   ]
 }

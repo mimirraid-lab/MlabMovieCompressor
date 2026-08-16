@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Permissions required by the local desktop compressor.","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","opener:default",{"identifier":"shell:allow-spawn","allow":[{"args":true,"name":"binaries/ffmpeg","sidecar":true},{"args":true,"name":"binaries/ffprobe","sidecar":true}]}]}}
+{"default":{"identifier":"default","description":"Permissions required by the local desktop compressor.","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","opener:allow-open-path"]}}
