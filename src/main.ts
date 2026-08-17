@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { recentSizes, formatSizeInput } from "./lib/history";
 import { BYTES_PER_MIB, formatBytes, targetMbToBytes } from "./lib/fileSize";
@@ -113,9 +112,21 @@ function wireEvents() {
   document.querySelector("#choose-output")?.addEventListener("click", chooseOutput);
   document.querySelector("#compress")?.addEventListener("click", compress);
   document.querySelector("#cancel")?.addEventListener("click", async () => { notice = "キャンセルしています…"; render(); await invoke("cancel_compression"); });
-  document.querySelector("#open-file")?.addEventListener("click", () => result && openPath(result.output_path));
-  document.querySelector("#open-folder")?.addEventListener("click", () => result && openPath(dirname(result.output_path)));
+  document.querySelector("#open-file")?.addEventListener("click", () => { void openCompletedFile(); });
+  document.querySelector("#open-folder")?.addEventListener("click", () => { void revealCompletedFile(); });
   document.querySelector("#new-video")?.addEventListener("click", selectVideo);
+}
+
+async function openCompletedFile() {
+  if (!result) return;
+  try { await invoke("open_completed_output"); }
+  catch (reason) { error = userError(reason); render(); }
+}
+
+async function revealCompletedFile() {
+  if (!result) return;
+  try { await invoke("reveal_completed_output"); }
+  catch (reason) { error = userError(reason); render(); }
 }
 
 /** Updates the controls affected by the size field without replacing the focused input element. */

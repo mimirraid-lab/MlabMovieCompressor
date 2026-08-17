@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{path::{Path, PathBuf}, process::Stdio, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{process::{CommandChild, CommandEvent}, ShellExt};
 use tokio::{io::{AsyncBufReadExt, BufReader}, process::{Child, Command}, sync::Mutex};
 
@@ -20,6 +21,7 @@ enum ActiveProcess { Development(Child), Sidecar(CommandChild) }
 pub struct CompressionManager {
     child: Arc<Mutex<Option<ActiveProcess>>>,
     cancel_requested: AtomicBool,
+    completed_output: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl CompressionManager {
@@ -52,6 +54,16 @@ impl CompressionManager {
         } else {
             Ok(())
         }
+    }
+
+    async fn remember_completed_output(&self, output: PathBuf) {
+        *self.completed_output.lock().await = Some(output);
+    }
+
+    async fn completed_output(&self) -> Result<PathBuf, AppError> {
+        let output = self.completed_output.lock().await.clone()
+            .ok_or_else(|| AppError::user("圧縮後のファイルが見つかりません。もう一度圧縮してください。"))?;
+        if output.is_file() { Ok(output) } else { Err(AppError::user("圧縮後のファイルが見つかりません。移動または削除されている可能性があります。")) }
     }
 }
 
@@ -96,6 +108,20 @@ pub async fn cancel_compression(manager: State<'_, CompressionManager>) -> Resul
 }
 
 #[tauri::command]
+pub async fn open_completed_output(app: AppHandle, manager: State<'_, CompressionManager>) -> Result<(), AppError> {
+    let output = manager.completed_output().await?;
+    app.opener().open_path(output.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|_| AppError::user("圧縮後のファイルを開けませんでした。"))
+}
+
+#[tauri::command]
+pub async fn reveal_completed_output(app: AppHandle, manager: State<'_, CompressionManager>) -> Result<(), AppError> {
+    let output = manager.completed_output().await?;
+    app.opener().reveal_item_in_dir(output)
+        .map_err(|_| AppError::user("圧縮後のファイルがあるフォルダーを開けませんでした。"))
+}
+
+#[tauri::command]
 pub async fn compress_video(app: AppHandle, manager: State<'_, CompressionManager>, request: CompressionRequest) -> Result<CompressionResult, AppError> {
     manager.begin();
     let input = PathBuf::from(&request.input_path);
@@ -113,6 +139,7 @@ pub async fn compress_video(app: AppHandle, manager: State<'_, CompressionManage
     }
     result?;
     let size = std::fs::metadata(&output).map_err(|_| AppError::user("圧縮後のファイルを確認できませんでした。"))?.len();
+    manager.remember_completed_output(output.clone()).await;
     Ok(CompressionResult { output_path: output.to_string_lossy().into_owned(), output_size_bytes: size })
 }
 
