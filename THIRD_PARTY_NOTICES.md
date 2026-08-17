@@ -2,13 +2,16 @@
 
 ## FFmpeg / ffprobe (Windows x64 distribution only)
 
-The Windows x64 distribution of MlabMovieCompressor includes `ffmpeg.exe` and `ffprobe.exe` from **BtbN FFmpeg Builds**. The bundled Windows x64 files were supplied from `ffmpeg-n8.1-latest-win64-gpl-8.1.zip` and identify themselves as `ffmpeg version n8.1.2-44-g7c533d0f86-20260815`.
+The Windows x64 distribution of MlabMovieCompressor includes `ffmpeg.exe` and `ffprobe.exe` from **BtbN FFmpeg Builds**. The bundled Windows x64 files were supplied from `ffmpeg-n8.1.2-44-g7c533d0f86-win64-gpl-8.1.zip` and identify themselves as `ffmpeg version n8.1.2-44-g7c533d0f86-20260815`.
 
 ### Build identification and corresponding source
 
 - FFmpeg version/build identifier: `n8.1.2-44-g7c533d0f86-20260815`
 - FFmpeg source revision identifier: `7c533d0f86` (the revision embedded in the FFmpeg version string)
-- BtbN artifact: `ffmpeg-n8.1-latest-win64-gpl-8.1.zip` for Windows x64
+- BtbN Release tag: `autobuild-2026-08-16-13-00`
+- BtbN FFmpeg-Builds commit: `590a6612d7d961e9258429e501619e0b7d7cbedf`
+- BtbN artifact: `ffmpeg-n8.1.2-44-g7c533d0f86-win64-gpl-8.1.zip` for Windows x64
+- BtbN artifact SHA-256: `d2425b12dc746a2b044148c6100440d4065876ac4ed6e3eb13a68437b7719796`
 - Build mode confirmed with `ffmpeg -version`: `--enable-gpl --enable-version3`; `--enable-nonfree` is not enabled
 - BtbN GPL variant license file: `COPYING.GPLv3`
 - FFmpeg source repository: <https://git.ffmpeg.org/ffmpeg.git>
@@ -22,4 +25,4 @@ The Windows x64 distribution of MlabMovieCompressor includes `ffmpeg.exe` and `f
 
 FFmpeg is an independent project and is not part of MlabMovieCompressor. The included binaries are used as external sidecar executables. Their licensing terms apply separately from the MIT License covering MlabMovieCompressor's original source code.
 
-For every v0.1.0 Release that distributes these binaries, attach the unmodified GPLv3 license text, this notice, and the corresponding source bundle as Release Assets. The source bundle must include the FFmpeg source revision above and the dependency source archives obtained with the matching BtbN FFmpeg-Builds `download.sh`; the BtbN Release page's `Source code (zip)` asset alone is not the corresponding dependency source bundle. Record the exact BtbN archive, BtbN FFmpeg-Builds commit, source-bundle filename, and SHA-256 values in the Release notes. The operational checklist is in [docs/release/v0.1.0-checklist.md](docs/release/v0.1.0-checklist.md). Do not distribute a build made with `--enable-nonfree`.
+For every v0.1.0 Release that distributes these binaries, attach the unmodified GPLv3 license text, this notice, and the corresponding source assets as Release Assets. The corresponding source assets must include the FFmpeg source revision above, the dependency source archives obtained with the matching BtbN FFmpeg-Builds `download.sh`, and the matching BtbN build definitions. The BtbN Release page's `Source code (zip)` asset alone is not the corresponding dependency source assets. Record the exact BtbN archive, BtbN FFmpeg-Builds commit, corresponding source asset filenames, and SHA-256 values in the Release notes. The operational checklist is in [docs/release/v0.1.0-checklist.md](docs/release/v0.1.0-checklist.md). Do not distribute a build made with `--enable-nonfree`.
