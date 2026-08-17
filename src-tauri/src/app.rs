@@ -3,7 +3,7 @@ use std::{path::{Path, PathBuf}, process::Stdio, sync::{atomic::{AtomicBool, Ord
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{process::{CommandChild, CommandEvent}, ShellExt};
-use tokio::{io::{AsyncBufReadExt, BufReader}, process::{Child, Command}, sync::Mutex};
+use tokio::{io::{AsyncBufReadExt, BufReader}, process::{Child, Command}, sync::Mutex, time::{timeout, Duration}};
 
 use crate::{encoding, media, settings};
 
@@ -186,7 +186,15 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
         .args(full_args).spawn().map_err(|_| AppError::user("同梱されたffmpegを起動できません。アプリを再インストールしてください。"))?;
     manager.register_child(ActiveProcess::Sidecar(child)).await?;
     let started = Instant::now(); let mut last_time = 0.0; let mut stdout_buffer = Vec::new(); let mut stderr = Vec::new(); let mut success = false;
-    while let Some(event) = events.recv().await {
+    loop {
+        // A killed sidecar should normally close its event stream, but do not leave the
+        // IPC command pending if Windows delays or loses that terminal event.
+        manager.ensure_not_cancelled()?;
+        let event = match timeout(Duration::from_millis(150), events.recv()).await {
+            Ok(Some(event)) => event,
+            Ok(None) => break,
+            Err(_) => continue,
+        };
         match event {
             CommandEvent::Stdout(bytes) => {
                 stdout_buffer.extend(bytes);
@@ -207,6 +215,7 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
         let line = String::from_utf8_lossy(&stdout_buffer).trim().to_owned();
         if !line.is_empty() { progress_from_line(app, &line, &mut last_time, duration, base, started); }
     }
+    manager.ensure_not_cancelled()?;
     if manager.child.lock().await.take().is_none() { return Err(CompressionManager::cancellation_error()); }
     if output_already_exists(&stderr) || !success { return Err(ffmpeg_failure(app, &stderr)); }
     Ok(())
@@ -248,6 +257,13 @@ mod tests {
         assert!(manager.is_cancel_requested());
         manager.begin();
         assert!(!manager.is_cancel_requested());
+    }
+
+    #[test]
+    fn cancellation_request_stops_the_active_pass() {
+        let manager = CompressionManager::default();
+        manager.request_cancel();
+        assert!(manager.ensure_not_cancelled().is_err());
     }
 
     #[test]

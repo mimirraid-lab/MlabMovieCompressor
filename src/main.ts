@@ -93,7 +93,7 @@ async function compress() {
     const completed = await invoke<CompressionResult>("compress_video", { request: { input_path: video.path, output_directory: outputDirectory, target_mb: target } });
     result = completed;
     settings = await invoke<Settings>("record_target_size", { targetMb: target });
-  } catch (reason) { error = userError(reason); }
+  } catch (reason) { error = userError(reason); notice = ""; }
   finally { busy = false; analyzing = false; render(); }
 }
 
@@ -111,7 +111,12 @@ function wireEvents() {
   document.querySelectorAll<HTMLButtonElement>("[data-size]").forEach(button => button.addEventListener("click", () => { targetText = button.dataset.size!; render(); }));
   document.querySelector("#choose-output")?.addEventListener("click", chooseOutput);
   document.querySelector("#compress")?.addEventListener("click", compress);
-  document.querySelector("#cancel")?.addEventListener("click", async () => { notice = "キャンセルしています…"; render(); await invoke("cancel_compression"); });
+  document.querySelector("#cancel")?.addEventListener("click", async () => {
+    notice = "キャンセルしています…";
+    render();
+    try { await invoke("cancel_compression"); }
+    catch (reason) { error = userError(reason); notice = ""; busy = false; analyzing = false; render(); }
+  });
   document.querySelector("#open-file")?.addEventListener("click", () => { void openCompletedFile(); });
   document.querySelector("#open-folder")?.addEventListener("click", () => { void revealCompletedFile(); });
   document.querySelector("#new-video")?.addEventListener("click", selectVideo);
