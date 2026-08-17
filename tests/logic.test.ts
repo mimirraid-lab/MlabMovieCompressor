@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { recentSizes } from "../src/lib/history";
 import { targetMbToBytes } from "../src/lib/fileSize";
+import { progressPercent, progressTitle } from "../src/lib/progress";
 import { parseTargetMb } from "../src/lib/validation";
 
 describe("recent target sizes", () => {
@@ -26,5 +27,14 @@ describe("MiB target-size conversion", () => {
     expect(targetMbToBytes(10)).toBe(10_485_760);
     expect(targetMbToBytes(25)).toBe(26_214_400);
     expect(targetMbToBytes(1.5)).toBe(1_572_864);
+  });
+});
+
+describe("two-pass progress presentation", () => {
+  it("labels the active pass and keeps its percentage within that pass", () => {
+    expect(progressTitle({ pass: 1 })).toBe("圧縮しています… 1/2");
+    expect(progressPercent({ percent: 72 })).toBe(72);
+    expect(progressTitle({ pass: 2 })).toBe("圧縮しています… 2/2");
+    expect(progressPercent({ percent: 34 })).toBe(34);
   });
 });

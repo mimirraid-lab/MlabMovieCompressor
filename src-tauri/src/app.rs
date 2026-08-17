@@ -72,7 +72,7 @@ pub struct CompressionRequest { input_path: String, output_directory: String, ta
 #[derive(Serialize)]
 pub struct CompressionResult { output_path: String, output_size_bytes: u64 }
 #[derive(Clone, Serialize)]
-struct Progress { percent: f64, eta_seconds: Option<u64> }
+struct Progress { pass: u8, percent: f64, eta_seconds: Option<u64> }
 
 fn ffmpeg_path() -> String { std::env::var("MLAB_FFMPEG_PATH").unwrap_or_else(|_| if cfg!(windows) { "ffmpeg.exe".into() } else { "ffmpeg".into() }) }
 fn null_device() -> &'static str { if cfg!(windows) { "NUL" } else { "/dev/null" } }
@@ -146,20 +146,26 @@ pub async fn compress_video(app: AppHandle, manager: State<'_, CompressionManage
 async fn run_two_passes(app: &AppHandle, manager: &CompressionManager, input: &Path, output: &Path, prefix: &Path, info: &media::VideoInfo, plan: encoding::BitratePlan) -> Result<(), AppError> {
     let video_bitrate = plan.video_bps.to_string(); let prefix_text = prefix.to_string_lossy().into_owned();
     let pass_one = vec!["-y".into(), "-i".into(), input.to_string_lossy().into_owned(), "-map".into(), "0:v:0".into(), "-c:v".into(), "libx264".into(), "-b:v".into(), video_bitrate.clone(), "-pass".into(), "1".into(), "-passlogfile".into(), prefix_text.clone(), "-an".into(), "-f".into(), "null".into(), null_device().into()];
-    run_pass(app, manager, pass_one, info.duration_seconds, 0.0).await?;
+    run_pass(app, manager, pass_one, info.duration_seconds, 1).await?;
     manager.ensure_not_cancelled()?;
+    let _ = app.emit("compression-progress", Progress { pass: 2, percent: 0.0, eta_seconds: None });
     let mut pass_two = vec!["-n".into(), "-i".into(), input.to_string_lossy().into_owned(), "-map".into(), "0:v:0".into(), "-map".into(), "0:a:0?".into(), "-c:v".into(), "libx264".into(), "-b:v".into(), video_bitrate, "-pass".into(), "2".into(), "-passlogfile".into(), prefix_text, "-movflags".into(), "+faststart".into()];
     if info.has_audio { pass_two.extend(["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}", plan.audio_bps)]); }
     pass_two.push(output.to_string_lossy().into_owned());
-    run_pass(app, manager, pass_two, info.duration_seconds, 50.0).await
+    run_pass(app, manager, pass_two, info.duration_seconds, 2).await
 }
 
-fn progress_from_line(app: &AppHandle, line: &str, last_time: &mut f64, duration: f64, base: f64, started: Instant) {
+fn progress_for_pass(pass: u8, last_time: f64, duration: f64, started: Instant) -> Progress {
+    let fraction = (last_time / duration).clamp(0.0, 1.0);
+    let elapsed = started.elapsed().as_secs_f64();
+    let eta_seconds = if fraction > 0.02 { Some(((elapsed / fraction) - elapsed).max(0.0) as u64) } else { None };
+    Progress { pass, percent: fraction * 100.0, eta_seconds }
+}
+
+fn progress_from_line(app: &AppHandle, line: &str, last_time: &mut f64, duration: f64, pass: u8, started: Instant) {
     if let Some(value) = line.strip_prefix("out_time_us=").or_else(|| line.strip_prefix("out_time_ms=")).and_then(|value| value.parse::<f64>().ok()) { *last_time = value / 1_000_000.0; }
     if line == "progress=continue" || line == "progress=end" {
-        let fraction = (*last_time / duration).clamp(0.0, 1.0); let elapsed = started.elapsed().as_secs_f64();
-        let eta_seconds = if fraction > 0.02 { Some((((elapsed / fraction) - elapsed) * if base == 0.0 { 2.0 } else { 1.0 }) as u64) } else { None };
-        let _ = app.emit("compression-progress", Progress { percent: base + fraction * 50.0, eta_seconds });
+        let _ = app.emit("compression-progress", progress_for_pass(pass, *last_time, duration, started));
     }
 }
 
@@ -175,12 +181,12 @@ fn drain_complete_progress_lines(buffer: &mut Vec<u8>) -> Vec<String> {
     lines
 }
 
-async fn run_pass(app: &AppHandle, manager: &CompressionManager, args: Vec<String>, duration: f64, base: f64) -> Result<(), AppError> {
+async fn run_pass(app: &AppHandle, manager: &CompressionManager, args: Vec<String>, duration: f64, pass: u8) -> Result<(), AppError> {
     manager.ensure_not_cancelled()?;
-    if media::uses_bundled_sidecars() { run_sidecar_pass(app, manager, args, duration, base).await } else { run_development_pass(app, manager, args, duration, base).await }
+    if media::uses_bundled_sidecars() { run_sidecar_pass(app, manager, args, duration, pass).await } else { run_development_pass(app, manager, args, duration, pass).await }
 }
 
-async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut args: Vec<String>, duration: f64, base: f64) -> Result<(), AppError> {
+async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut args: Vec<String>, duration: f64, pass: u8) -> Result<(), AppError> {
     let mut full_args = vec!["-v".into(), "error".into(), "-progress".into(), "pipe:1".into(), "-nostats".into()]; full_args.append(&mut args);
     let (mut events, child) = app.shell().sidecar("ffmpeg").map_err(|_| AppError::user("同梱されたffmpegを起動できません。アプリを再インストールしてください。"))?
         .args(full_args).spawn().map_err(|_| AppError::user("同梱されたffmpegを起動できません。アプリを再インストールしてください。"))?;
@@ -199,7 +205,7 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
             CommandEvent::Stdout(bytes) => {
                 stdout_buffer.extend(bytes);
                 for line in drain_complete_progress_lines(&mut stdout_buffer) {
-                    progress_from_line(app, &line, &mut last_time, duration, base, started);
+                    progress_from_line(app, &line, &mut last_time, duration, pass, started);
                 }
             },
             CommandEvent::Stderr(bytes) => { stderr.extend(bytes); stderr.push(b'\n'); },
@@ -209,11 +215,11 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
         }
     }
     for line in drain_complete_progress_lines(&mut stdout_buffer) {
-        progress_from_line(app, &line, &mut last_time, duration, base, started);
+        progress_from_line(app, &line, &mut last_time, duration, pass, started);
     }
     if !stdout_buffer.is_empty() {
         let line = String::from_utf8_lossy(&stdout_buffer).trim().to_owned();
-        if !line.is_empty() { progress_from_line(app, &line, &mut last_time, duration, base, started); }
+        if !line.is_empty() { progress_from_line(app, &line, &mut last_time, duration, pass, started); }
     }
     manager.ensure_not_cancelled()?;
     if manager.child.lock().await.take().is_none() { return Err(CompressionManager::cancellation_error()); }
@@ -221,14 +227,14 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
     Ok(())
 }
 
-async fn run_development_pass(app: &AppHandle, manager: &CompressionManager, args: Vec<String>, duration: f64, base: f64) -> Result<(), AppError> {
+async fn run_development_pass(app: &AppHandle, manager: &CompressionManager, args: Vec<String>, duration: f64, pass: u8) -> Result<(), AppError> {
     let mut command = Command::new(ffmpeg_path()); hide_console(&mut command);
     let mut child = command.arg("-v").arg("error").arg("-progress").arg("pipe:1").arg("-nostats").args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
         .map_err(|error| if error.kind() == std::io::ErrorKind::NotFound { AppError::user("ffmpegが見つかりません。開発環境ではFFmpegをインストールし、PATHまたはMLAB_FFMPEG_PATHを設定してください。") } else { AppError::user("FFmpegを開始できませんでした。") })?;
     let stdout = child.stdout.take().ok_or_else(|| AppError::user("FFmpegの進捗を取得できませんでした。"))?; let stderr = child.stderr.take();
     manager.register_child(ActiveProcess::Development(child)).await?;
     let started = Instant::now(); let mut output = BufReader::new(stdout).lines(); let mut last_time = 0.0;
-    while let Some(line) = output.next_line().await.map_err(|_| AppError::user("FFmpegの進捗取得に失敗しました。"))? { progress_from_line(app, &line, &mut last_time, duration, base, started); }
+    while let Some(line) = output.next_line().await.map_err(|_| AppError::user("FFmpegの進捗取得に失敗しました。"))? { progress_from_line(app, &line, &mut last_time, duration, pass, started); }
     let status = match manager.child.lock().await.take() { Some(ActiveProcess::Development(mut running)) => running.wait().await.map_err(|_| AppError::user("FFmpegの終了状態を確認できませんでした。"))?, Some(ActiveProcess::Sidecar(_)) => return Err(AppError::user("圧縮処理の状態が不正です。")), None => return Err(CompressionManager::cancellation_error()) };
     let mut log = Vec::new(); if let Some(mut stream) = stderr { use tokio::io::AsyncReadExt; let _ = stream.read_to_end(&mut log).await; }
     if output_already_exists(&log) || !status.success() { return Err(ffmpeg_failure(app, &log)); }
@@ -248,7 +254,8 @@ fn save_log(app: &AppHandle, contents: &str) { if let Ok(directory) = app.path()
 
 #[cfg(test)]
 mod tests {
-    use super::{drain_complete_progress_lines, AppError, CompressionManager};
+    use super::{drain_complete_progress_lines, progress_for_pass, AppError, CompressionManager};
+    use std::time::Instant;
 
     #[test]
     fn cancel_request_is_reset_for_each_new_compression() {
@@ -297,5 +304,19 @@ mod tests {
     fn trims_crlf_progress_lines() {
         let mut buffer = b"out_time_ms=2500000\r\nprogress=end\r\n".to_vec();
         assert_eq!(drain_complete_progress_lines(&mut buffer), ["out_time_ms=2500000", "progress=end"]);
+    }
+
+    #[test]
+    fn progress_is_reported_within_the_current_pass() {
+        let now = Instant::now();
+        let first_pass = progress_for_pass(1, 72.0, 100.0, now);
+        let second_pass = progress_for_pass(2, 34.0, 100.0, now);
+        let completed_second_pass = progress_for_pass(2, 120.0, 100.0, now);
+
+        assert_eq!(first_pass.pass, 1);
+        assert_eq!(first_pass.percent, 72.0);
+        assert_eq!(second_pass.pass, 2);
+        assert_eq!(second_pass.percent, 34.0);
+        assert_eq!(completed_second_pass.percent, 100.0);
     }
 }

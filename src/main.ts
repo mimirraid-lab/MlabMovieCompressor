@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { recentSizes, formatSizeInput } from "./lib/history";
 import { BYTES_PER_MIB, formatBytes, targetMbToBytes } from "./lib/fileSize";
+import { progressPercent, progressTitle } from "./lib/progress";
 import { parseTargetMb } from "./lib/validation";
 import type { CompressionResult, MediaToolsStatus, Progress, Settings, VideoInfo } from "./types";
 import "./styles.css";
@@ -18,7 +19,7 @@ let analyzing = false;
 let result: CompressionResult | null = null;
 let notice = "";
 let error = "";
-let progress: Progress = { percent: 0, eta_seconds: null };
+let progress: Progress = { pass: 1, percent: 0, eta_seconds: null };
 
 const formatDuration = (seconds: number) => {
   const total = Math.max(0, Math.round(seconds));
@@ -56,7 +57,7 @@ function render() {
         <section class="form-section"><label for="target-size">目標サイズ</label><div class="target-row"><input id="target-size" inputmode="decimal" value="${escape(targetText)}" placeholder="例: 9.5" ${locked ? "disabled" : ""}/><span>MB</span></div><p id="target-error" class="field-error" ${targetText && !target ? "" : "hidden"}>0より大きい数値を入力してください。</p><p id="target-warning" class="warning" ${qualityWarning() ? "" : "hidden"}>${escape(qualityWarning())}</p></section>
         ${recent.length ? `<section class="recent"><span>最近使ったサイズ</span><div>${recent.map(value => `<button class="chip" data-size="${value}" ${locked ? "disabled" : ""}>${formatSizeInput(value)} MB</button>`).join("")}</div></section>` : ""}
         <section class="form-section output"><label>出力先</label><div class="output-row"><span title="${escape(outputDirectory || dirname(video.path))}">${escape(outputDirectory || dirname(video.path))}</span><button class="text-button" id="choose-output" ${locked ? "disabled" : ""}>変更</button></div></section>
-        ${busy ? (!analyzing ? `<section class="progress-area"><div class="progress-title"><strong>圧縮しています…</strong><span>${Math.round(progress.percent)}%</span></div><div class="progress"><i style="width:${Math.min(100, Math.max(0, progress.percent))}%"></i></div>${progress.eta_seconds ? `<p>残り約 ${formatDuration(progress.eta_seconds)}</p>` : ""}<button class="secondary wide" id="cancel">キャンセル</button></section>` : "") : `<button class="primary wide" id="compress" ${canCompress ? "" : "disabled"}>圧縮する</button>`}
+        ${busy ? (!analyzing ? `<section class="progress-area"><div class="progress-title"><strong>${progressTitle(progress)}</strong><span>${Math.round(progressPercent(progress))}%</span></div><div class="progress"><i style="width:${progressPercent(progress)}%"></i></div>${progress.eta_seconds ? `<p>残り約 ${formatDuration(progress.eta_seconds)}</p>` : ""}<button class="secondary wide" id="cancel">キャンセル</button></section>` : "") : `<button class="primary wide" id="compress" ${canCompress ? "" : "disabled"}>圧縮する</button>`}
         ${result ? `<section class="result"><div class="result-icon">✓</div><div><h2>圧縮が完了しました</h2><p>${formatBytes(video.size_bytes)} → ${formatBytes(result.output_size_bytes)}（${Math.max(0, Math.round((1 - result.output_size_bytes / video.size_bytes) * 100))}% 削減）</p><div class="result-actions"><button class="secondary" id="open-file">ファイルを開く</button><button class="secondary" id="open-folder">フォルダーを開く</button><button class="text-button" id="new-video">別の動画を選択</button></div></div></section>` : ""}
       `}
       <footer>対応形式：MP4　·　FFmpegを使用します<br/><span class="size-note">※ ファイルサイズは 1 MB = 1 MiB（1,048,576 bytes）として計算します。</span></footer>
@@ -88,7 +89,7 @@ async function chooseOutput() {
 async function compress() {
   const target = parseTargetMb(targetText);
   if (!video || !target || busy) return;
-  error = ""; notice = ""; result = null; busy = true; analyzing = true; progress = { percent: 0, eta_seconds: null }; render();
+  error = ""; notice = ""; result = null; busy = true; analyzing = true; progress = { pass: 1, percent: 0, eta_seconds: null }; render();
   try {
     const completed = await invoke<CompressionResult>("compress_video", { request: { input_path: video.path, output_directory: outputDirectory, target_mb: target } });
     result = completed;
