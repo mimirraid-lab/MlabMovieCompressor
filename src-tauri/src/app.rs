@@ -163,6 +163,18 @@ fn progress_from_line(app: &AppHandle, line: &str, last_time: &mut f64, duration
     }
 }
 
+/// Sidecar stdout is delivered in arbitrary byte chunks, not line-sized messages.
+/// Retain an unfinished line for the next chunk and return every complete line.
+fn drain_complete_progress_lines(buffer: &mut Vec<u8>) -> Vec<String> {
+    let mut lines = Vec::new();
+    while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+        let bytes: Vec<u8> = buffer.drain(..=newline).collect();
+        let line = String::from_utf8_lossy(&bytes[..bytes.len() - 1]).trim().to_owned();
+        lines.push(line);
+    }
+    lines
+}
+
 async fn run_pass(app: &AppHandle, manager: &CompressionManager, args: Vec<String>, duration: f64, base: f64) -> Result<(), AppError> {
     manager.ensure_not_cancelled()?;
     if media::uses_bundled_sidecars() { run_sidecar_pass(app, manager, args, duration, base).await } else { run_development_pass(app, manager, args, duration, base).await }
@@ -173,15 +185,27 @@ async fn run_sidecar_pass(app: &AppHandle, manager: &CompressionManager, mut arg
     let (mut events, child) = app.shell().sidecar("ffmpeg").map_err(|_| AppError::user("同梱されたffmpegを起動できません。アプリを再インストールしてください。"))?
         .args(full_args).spawn().map_err(|_| AppError::user("同梱されたffmpegを起動できません。アプリを再インストールしてください。"))?;
     manager.register_child(ActiveProcess::Sidecar(child)).await?;
-    let started = Instant::now(); let mut last_time = 0.0; let mut stderr = Vec::new(); let mut success = false;
+    let started = Instant::now(); let mut last_time = 0.0; let mut stdout_buffer = Vec::new(); let mut stderr = Vec::new(); let mut success = false;
     while let Some(event) = events.recv().await {
         match event {
-            CommandEvent::Stdout(bytes) => progress_from_line(app, &String::from_utf8_lossy(&bytes), &mut last_time, duration, base, started),
+            CommandEvent::Stdout(bytes) => {
+                stdout_buffer.extend(bytes);
+                for line in drain_complete_progress_lines(&mut stdout_buffer) {
+                    progress_from_line(app, &line, &mut last_time, duration, base, started);
+                }
+            },
             CommandEvent::Stderr(bytes) => { stderr.extend(bytes); stderr.push(b'\n'); },
             CommandEvent::Terminated(status) => success = status.code == Some(0),
             CommandEvent::Error(message) => { stderr.extend(message.as_bytes()); stderr.push(b'\n'); },
             _ => {}
         }
+    }
+    for line in drain_complete_progress_lines(&mut stdout_buffer) {
+        progress_from_line(app, &line, &mut last_time, duration, base, started);
+    }
+    if !stdout_buffer.is_empty() {
+        let line = String::from_utf8_lossy(&stdout_buffer).trim().to_owned();
+        if !line.is_empty() { progress_from_line(app, &line, &mut last_time, duration, base, started); }
     }
     if manager.child.lock().await.take().is_none() { return Err(CompressionManager::cancellation_error()); }
     if output_already_exists(&stderr) || !success { return Err(ffmpeg_failure(app, &stderr)); }
@@ -215,7 +239,7 @@ fn save_log(app: &AppHandle, contents: &str) { if let Ok(directory) = app.path()
 
 #[cfg(test)]
 mod tests {
-    use super::{AppError, CompressionManager};
+    use super::{drain_complete_progress_lines, AppError, CompressionManager};
 
     #[test]
     fn cancel_request_is_reset_for_each_new_compression() {
@@ -235,5 +259,27 @@ mod tests {
     #[test]
     fn detects_ffmpeg_no_overwrite_message_even_with_a_success_status() {
         assert!(super::output_already_exists(b"File 'output.mp4' already exists. Exiting."));
+    }
+
+    #[test]
+    fn parses_multiple_progress_lines_from_one_stdout_chunk() {
+        let mut buffer = b"out_time_us=1500000\nprogress=continue\n".to_vec();
+        assert_eq!(drain_complete_progress_lines(&mut buffer), ["out_time_us=1500000", "progress=continue"]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn retains_a_split_progress_line_until_the_next_stdout_chunk() {
+        let mut buffer = b"out_time_us=15".to_vec();
+        assert!(drain_complete_progress_lines(&mut buffer).is_empty());
+        buffer.extend(b"00000\nprogress=continue\n");
+        assert_eq!(drain_complete_progress_lines(&mut buffer), ["out_time_us=1500000", "progress=continue"]);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn trims_crlf_progress_lines() {
+        let mut buffer = b"out_time_ms=2500000\r\nprogress=end\r\n".to_vec();
+        assert_eq!(drain_complete_progress_lines(&mut buffer), ["out_time_ms=2500000", "progress=end"]);
     }
 }
